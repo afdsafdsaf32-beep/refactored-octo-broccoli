@@ -1,0 +1,49 @@
+name: Build iOS .ipa
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "ios-client/**"
+
+jobs:
+  build:
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: ios-client
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Install fastlane
+        run: gem install fastlane -N
+
+      - name: Restore Apple session (avoids interactive 2FA)
+        env:
+          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+        run: echo "FASTLANE_SESSION is set, used automatically by fastlane"
+
+      - name: Build & sign .ipa
+        env:
+          FASTLANE_USER: ${{ secrets.APPLE_ID }}
+          FASTLANE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
+          FASTLANE_DISABLE_COLORS: "1"
+        run: fastlane build
+
+      - name: Upload .ipa artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PhoneVR-ipa
+          path: ios-client/build/PhoneVR.ipa
+          retention-days: 7

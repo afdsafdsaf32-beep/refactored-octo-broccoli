@@ -1,0 +1,23 @@
+name: PhoneVR
+options:
+  bundleIdPrefix: com.phonevr
+targets:
+  PhoneVR:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - PhoneVR
+    info:
+      path: PhoneVR/Info.plist
+      properties:
+        UILaunchScreen: {}
+        CFBundleDisplayName: PhoneVR
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.phonevr.app
+        TARGETED_DEVICE_FAMILY: "1"
+        SWIFT_VERSION: "5.0"
+        CODE_SIGN_STYLE: Automatic

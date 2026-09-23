@@ -1,0 +1,27 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build and sign PhoneVR with a free (personal-team) Apple ID and export an .ipa"
+  lane :build do
+    # Signs in using the Apple ID + app-specific password stored in
+    # FASTLANE_USER / FASTLANE_PASSWORD (or a pre-captured FASTLANE_SESSION,
+    # which avoids 2FA prompts in CI - see docs/ios-ci.md).
+    setup_ci if ENV["CI"]
+
+    sync_code_signing(
+      type: "development",
+      readonly: false,
+      username: ENV["FASTLANE_USER"],
+      app_identifier: "com.phonevr.app"
+    ) rescue UI.message("sync_code_signing skipped, falling back to xcodebuild -allowProvisioningUpdates")
+
+    gym(
+      project: "PhoneVR.xcodeproj",
+      scheme: "PhoneVR",
+      export_method: "development",
+      output_directory: "build",
+      output_name: "PhoneVR.ipa",
+      xcargs: "-allowProvisioningUpdates"
+    )
+  end
+end
