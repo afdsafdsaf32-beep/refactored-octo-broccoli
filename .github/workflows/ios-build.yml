@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "ios-client/**"
+      - ".github/workflows/ios-build.yml"
 
 jobs:
   build:
