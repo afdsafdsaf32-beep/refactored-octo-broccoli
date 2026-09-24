@@ -13,6 +13,10 @@ final class H264Decoder {
     private var buffer = Data()
 
     var onFrame: ((CVPixelBuffer) -> Void)?
+    /// Fires on VTDecompressionSessionDecodeFrame failures (status, human name) - previously
+    /// silently ignored, which made a broken decode path (see the use-after-free this replaced)
+    /// indistinguishable from "no data arriving at all" without a debugger attached.
+    var onDecodeError: ((OSStatus) -> Void)?
 
     /// Feed raw bytes as they arrive from the socket; call repeatedly.
     func push(_ data: Data) {
@@ -112,16 +116,25 @@ final class H264Decoder {
         withUnsafeBytes(of: &length) { nalWithLength.append(contentsOf: $0) }
         nalWithLength.append(contentsOf: nal)
 
+        // Let CMBlockBuffer allocate and own its own copy of the bytes
+        // (blockAllocator: kCFAllocatorDefault) rather than pointing at
+        // nalWithLength's storage with kCFAllocatorNull - that local array
+        // is deallocated as soon as this function returns, and decoding
+        // happens asynchronously, so the decoder would read freed memory
+        // and silently never produce a frame.
         var blockBuffer: CMBlockBuffer?
-        let status = nalWithLength.withUnsafeMutableBytes { rawBuf -> OSStatus in
-            CMBlockBufferCreateWithMemoryBlock(
-                allocator: kCFAllocatorDefault,
-                memoryBlock: rawBuf.baseAddress, blockLength: rawBuf.count,
-                blockAllocator: kCFAllocatorNull, customBlockSource: nil,
-                offsetToData: 0, dataLength: rawBuf.count, flags: 0,
-                blockBufferOut: &blockBuffer)
-        }
+        var status = CMBlockBufferCreateWithMemoryBlock(
+            allocator: kCFAllocatorDefault,
+            memoryBlock: nil, blockLength: nalWithLength.count,
+            blockAllocator: kCFAllocatorDefault, customBlockSource: nil,
+            offsetToData: 0, dataLength: nalWithLength.count, flags: 0,
+            blockBufferOut: &blockBuffer)
         guard status == kCMBlockBufferNoErr, let bb = blockBuffer else { return }
+
+        status = nalWithLength.withUnsafeBytes { rawBuf in
+            CMBlockBufferReplaceDataBytes(with: rawBuf.baseAddress!, blockBuffer: bb, offsetIntoDestination: 0, dataLength: rawBuf.count)
+        }
+        guard status == kCMBlockBufferNoErr else { return }
 
         var sampleBuffer: CMSampleBuffer?
         var sampleSizeArray = [nalWithLength.count]
@@ -134,8 +147,11 @@ final class H264Decoder {
         guard let sb = sampleBuffer else { return }
 
         var flagOut = VTDecodeInfoFlags()
-        VTDecompressionSessionDecodeFrame(session, sampleBuffer: sb,
+        let decodeStatus = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sb,
                                            flags: [._EnableAsynchronousDecompression],
                                            frameRefcon: nil, infoFlagsOut: &flagOut)
+        if decodeStatus != noErr {
+            onDecodeError?(decodeStatus)
+        }
     }
 }

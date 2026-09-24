@@ -95,6 +95,27 @@ struct ContentView: View {
                 .onTapGesture(count: 2) { showSettings.toggle() }
             }
 
+            // Always-visible debug strip for the SteamVR path - there's no
+            // Xcode console attached to a sideloaded CI build, so this is
+            // the only way to see what stage things are stuck at.
+            if mode == .steamVR && !showSettings {
+                VStack {
+                    VStack(spacing: 2) {
+                        Text(pvr.statusText)
+                        Text("frames decoded: \(pvr.framesDecoded)")
+                        if let err = pvr.lastDecodeError {
+                            Text(err).foregroundColor(.red)
+                        }
+                    }
+                    .font(.caption2).foregroundColor(.white)
+                    .padding(6)
+                    .background(Color.black.opacity(0.6))
+                    .cornerRadius(6)
+                    .padding(.top, 8)
+                    Spacer()
+                }
+            }
+
             if showSettings {
                 VStack(spacing: 16) {
                     Text("PhoneVR").font(.title).foregroundColor(.white)

@@ -18,6 +18,8 @@ import CoreGraphics
 final class PVRSteamVRClient: ObservableObject {
     @Published var statusText = "Idle"
     @Published var frame: CGImage?
+    @Published var framesDecoded = 0
+    @Published var lastDecodeError: String?
 
     private let decoder = H264Decoder()
     private let ciContext = CIContext()
@@ -44,6 +46,8 @@ final class PVRSteamVRClient: ObservableObject {
                  // otherwise NWListener silently fails to rebind port 33333 (already in use)
         self.pcHost = pcHost
         paired = false
+        framesDecoded = 0
+        lastDecodeError = nil
         statusText = "Announcing to \(pcHost)..."
 
         decoder.onFrame = { [weak self] pixelBuffer in
@@ -56,7 +60,13 @@ final class PVRSteamVRClient: ObservableObject {
             // can't easily patch/recompile the closed legacy PC driver.
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.down)
             guard let cg = self?.ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
-            DispatchQueue.main.async { self?.frame = cg }
+            DispatchQueue.main.async {
+                self?.frame = cg
+                self?.framesDecoded += 1
+            }
+        }
+        decoder.onDecodeError = { [weak self] status in
+            DispatchQueue.main.async { self?.lastDecodeError = "VTDecompressionSessionDecodeFrame failed: \(status)" }
         }
 
         frameParser.onFrame = { [weak self] msg, payload in
@@ -160,6 +170,7 @@ final class PVRSteamVRClient: ObservableObject {
             connectPose()
         case .headerNALs:
             decoder.push(payload)   // contains SPS+PPS Annex-B NALs
+            DispatchQueue.main.async { self.statusText = "Got SPS/PPS (\(payload.count) bytes), connecting video..." }
         case .disconnect:
             DispatchQueue.main.async { self.statusText = "PC disconnected" }
             stop()
@@ -184,6 +195,15 @@ final class PVRSteamVRClient: ObservableObject {
     private func connectVideo() {
         let conn = NWConnection(host: NWEndpoint.Host(pcHost), port: NWEndpoint.Port(rawValue: PVRPort.video)!, using: .tcp)
         videoConnection = conn
+        conn.stateUpdateHandler = { [weak self] state in
+            switch state {
+            case .ready:
+                DispatchQueue.main.async { self?.statusText = "Video connected, waiting for frames..." }
+            case .failed(let error):
+                DispatchQueue.main.async { self?.statusText = "Video connection failed: \(error)" }
+            default: break
+            }
+        }
         conn.start(queue: queue)
         receiveVideoHeader(conn)
     }
