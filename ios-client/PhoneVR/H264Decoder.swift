@@ -61,10 +61,14 @@ final class H264Decoder {
         guard !nal.isEmpty else { return }
         let type = nal[0] & 0x1F
         switch type {
-        case 7: sps = nal; tryBuildFormatDescription()
-        case 8: pps = nal; tryBuildFormatDescription()
-        case 5, 1: decode(nal: nal)
-        default: break
+        case 7:
+            guard nal != sps else { return }   // x264 repeats SPS/PPS before every keyframe
+            sps = nal; tryBuildFormatDescription()
+        case 8:
+            guard nal != pps else { return }   // (b_repeat_headers=1) - only rebuild the
+            pps = nal; tryBuildFormatDescription()   // VTDecompressionSession when they actually change,
+        case 5, 1: decode(nal: nal)               // otherwise every keyframe tears down the session
+        default: break                            // mid-stream and no frame ever finishes decoding.
         }
     }
 
