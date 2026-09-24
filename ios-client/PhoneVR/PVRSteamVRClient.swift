@@ -46,6 +46,9 @@ final class PVRSteamVRClient: ObservableObject {
     private let frameParser = PVRFrameParser()
     private var announceTimer: Timer?
     private var paired = false
+    private var active = false
+    private var videoConnected = false
+    private var videoRetryCount = 0
 
     private let queue = DispatchQueue(label: "phonevr.pvr")
 
@@ -58,7 +61,10 @@ final class PVRSteamVRClient: ObservableObject {
         stop()   // tear down any listener/connections left over from a previous attempt first -
                  // otherwise NWListener silently fails to rebind port 33333 (already in use)
         self.pcHost = pcHost
+        active = true
         paired = false
+        videoConnected = false
+        videoRetryCount = 0
         framesDecoded = 0
         lastDecodeError = nil
         log = []
@@ -112,6 +118,7 @@ final class PVRSteamVRClient: ObservableObject {
     }
 
     func stop() {
+        active = false
         announceTimer?.invalidate()
         announceTimer = nil
         pairingListener?.cancel()
@@ -210,19 +217,48 @@ final class PVRSteamVRClient: ObservableObject {
     // MARK: - Step 5: video stream (phone connects out to the PC)
 
     private func connectVideo() {
+        videoConnected = false
+        videoRetryCount = 0
+        attemptVideoConnect()
+    }
+
+    /// The PC driver needs a couple hundred ms after ADDITIONAL_DATA to
+    /// actually call accept() on its video port (observed ~200ms in
+    /// pvrlog.txt) - a connect attempt that lands before that sits retrying
+    /// SYNs indefinitely without ever calling back .failed, so a single
+    /// attempt with no timeout can hang forever. Give each attempt a short
+    /// window, then cancel and start a fresh one.
+    private func attemptVideoConnect() {
+        guard active, !videoConnected else { return }
         let conn = NWConnection(host: NWEndpoint.Host(pcHost), port: NWEndpoint.Port(rawValue: PVRPort.video)!, using: .tcp)
         videoConnection = conn
         conn.stateUpdateHandler = { [weak self] state in
+            guard let self = self else { return }
             switch state {
             case .ready:
-                self?.logEvent("Video connected, waiting for frames...")
-            case .failed(let error):
-                self?.logEvent("Video connection failed: \(error)")
+                self.videoConnected = true
+                self.logEvent("Video connected, waiting for frames...")
+            case .failed:
+                self.retryVideoConnect()
             default: break
             }
         }
         conn.start(queue: queue)
         receiveVideoHeader(conn)
+
+        queue.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            self?.retryVideoConnect()
+        }
+    }
+
+    private func retryVideoConnect() {
+        guard active, !videoConnected else { return }
+        videoRetryCount += 1
+        if videoRetryCount == 1 || videoRetryCount % 5 == 0 {
+            logEvent("Retrying video connection (attempt \(videoRetryCount))...")
+        }
+        videoConnection?.cancel()
+        attemptVideoConnect()
     }
 
     private static let frameHeaderSize = 8 + 16 + 4 + 20 + 8 + 8   // 64 bytes, see PVRSockets.cpp extraBuf
