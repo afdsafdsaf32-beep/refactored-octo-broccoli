@@ -29,7 +29,7 @@ final class StreamViewModel: ObservableObject {
             }
         }
 
-        videoClient.onData = { [weak self] data in self?.annexBAdaptor.decode(data) }
+        videoClient.onData = { [weak self] data in self?.annexBAdaptor.decode(AnnexBNormalizer.normalize(data)) }
         videoClient.onStateChange = { [weak self] state in
             if case .ready = state { DispatchQueue.main.async { self?.connected = true } }
         }

@@ -206,7 +206,7 @@ final class PVRSteamVRClient: ObservableObject {
             connectVideo()
             connectPose()
         case .headerNALs:
-            annexBAdaptor.decode(payload)   // contains SPS+PPS Annex-B NALs
+            annexBAdaptor.decode(AnnexBNormalizer.normalize(payload))   // contains SPS+PPS Annex-B NALs
             logEvent("Got SPS/PPS (\(payload.count) bytes)")
         case .disconnect:
             logEvent("PC disconnected")
@@ -290,7 +290,7 @@ final class PVRSteamVRClient: ObservableObject {
 
     private func receiveVideoPayload(_ conn: NWConnection, remaining: Int, accumulated: Data = Data()) {
         guard remaining > 0 else {
-            annexBAdaptor.decode(accumulated)
+            annexBAdaptor.decode(AnnexBNormalizer.normalize(accumulated))
             receiveVideoHeader(conn)
             return
         }
@@ -302,7 +302,7 @@ final class PVRSteamVRClient: ObservableObject {
             if left > 0 && error == nil && !isComplete {
                 self.receiveVideoPayload(conn, remaining: left, accumulated: acc)
             } else {
-                self.annexBAdaptor.decode(acc)
+                self.annexBAdaptor.decode(AnnexBNormalizer.normalize(acc))
                 self.receiveVideoHeader(conn)
             }
         }
