@@ -40,6 +40,8 @@ final class PVRSteamVRClient: ObservableObject {
     private let renderHeight: UInt16 = 1080
 
     func start(pcHost: String) {
+        stop()   // tear down any listener/connections left over from a previous attempt first -
+                 // otherwise NWListener silently fails to rebind port 33333 (already in use)
         self.pcHost = pcHost
         paired = false
         statusText = "Announcing to \(pcHost)..."
@@ -68,9 +70,13 @@ final class PVRSteamVRClient: ObservableObject {
         // loaded it, which may well be after you've pressed Connect here
         // (README even recommends opening this app first). A one-shot UDP
         // announce would just vanish into that gap, so keep resending until
-        // the control channel actually comes up.
+        // the control channel actually comes up - the Android client does
+        // this every 10ms when given an explicit IP (PVRSockets.cpp
+        // PVRAnnounceToAllInterfaces); we use 300ms, aggressive enough to
+        // reliably land inside the driver's ~5s pairing window without
+        // spamming the network.
         sendPairingAnnounce()
-        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.3, repeats: true) { [weak self] _ in
             guard let self = self, !self.paired else { return }
             self.sendPairingAnnounce()
         }
@@ -82,9 +88,13 @@ final class PVRSteamVRClient: ObservableObject {
         announceTimer?.invalidate()
         announceTimer = nil
         pairingListener?.cancel()
+        pairingListener = nil
         controlConnection?.cancel()
+        controlConnection = nil
         videoConnection?.cancel()
+        videoConnection = nil
         poseConnection?.cancel()
+        poseConnection = nil
         motionManager.stopDeviceMotionUpdates()
         statusText = "Idle"
     }
