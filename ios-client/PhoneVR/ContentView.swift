@@ -1,5 +1,6 @@
 import SwiftUI
 import CoreImage
+import Transcoding
 
 final class StreamViewModel: ObservableObject {
     @Published var frame: CGImage?
@@ -7,7 +8,9 @@ final class StreamViewModel: ObservableObject {
 
     private let videoClient = TCPClient()
     private let controlClient = TCPClient()
-    private let decoder = H264Decoder()
+    private let videoDecoder = VideoDecoder(config: .init(realTime: true))
+    private lazy var annexBAdaptor = VideoDecoderAnnexBAdaptor(videoDecoder: videoDecoder, codec: .h264)
+    private var decodeTask: Task<Void, Never>?
     private var motionSender: MotionSender?
     private let ciContext = CIContext()
 
@@ -15,13 +18,18 @@ final class StreamViewModel: ObservableObject {
     /// link (see docs/usb-connection.md) - same code path either way.
     /// videoPort/controlPort must match server.py's VIDEO_PORT / CONTROL_PORT.
     func connect(host: String, videoPort: UInt16 = 9001, controlPort: UInt16 = 9002) {
-        decoder.onFrame = { [weak self] pixelBuffer in
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-            guard let cgImage = self?.ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
-            DispatchQueue.main.async { self?.frame = cgImage }
+        decodeTask?.cancel()
+        decodeTask = Task { [weak self] in
+            guard let self = self else { return }
+            for await sampleBuffer in self.videoDecoder.decodedSampleBuffers {
+                guard let pixelBuffer = sampleBuffer.imageBuffer else { continue }
+                let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+                guard let cgImage = self.ciContext.createCGImage(ciImage, from: ciImage.extent) else { continue }
+                await MainActor.run { self.frame = cgImage }
+            }
         }
 
-        videoClient.onData = { [weak self] data in self?.decoder.push(data) }
+        videoClient.onData = { [weak self] data in self?.annexBAdaptor.decode(data) }
         videoClient.onStateChange = { [weak self] state in
             if case .ready = state { DispatchQueue.main.async { self?.connected = true } }
         }
@@ -34,6 +42,8 @@ final class StreamViewModel: ObservableObject {
     }
 
     func disconnect() {
+        decodeTask?.cancel()
+        videoDecoder.invalidate()
         motionSender?.stop()
         videoClient.disconnect()
         controlClient.disconnect()

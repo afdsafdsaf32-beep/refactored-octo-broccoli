@@ -1,6 +1,10 @@
 name: PhoneVR
 options:
   bundleIdPrefix: com.phonevr
+packages:
+  Transcoding:
+    url: https://github.com/finnvoor/Transcoding
+    exactVersion: 0.0.2
 targets:
   PhoneVR:
     type: application
@@ -8,6 +12,8 @@ targets:
     deploymentTarget: "16.0"
     sources:
       - PhoneVR
+    dependencies:
+      - package: Transcoding
     info:
       path: PhoneVR/Info.plist
       properties:

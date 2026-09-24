@@ -3,6 +3,8 @@ import Network
 import CoreMotion
 import CoreImage
 import CoreGraphics
+import CoreMedia
+import Transcoding
 
 /// Drives the full PhoneVR/SteamVR handshake (see PVRProtocol.swift) so this
 /// app can act as the "HMD" side of the open-source PhoneVR OpenVR driver:
@@ -34,7 +36,16 @@ final class PVRSteamVRClient: ObservableObject {
         }
     }
 
-    private let decoder = H264Decoder()
+    // Own hand-rolled H264Decoder was replaced with finnvoor/Transcoding:
+    // it does the same Annex-B -> VideoToolbox decode but avoids two bugs
+    // ours had - decodeFrame with _EnableAsynchronousDecompression pointing
+    // a CMBlockBuffer at memory that got freed before decode actually ran,
+    // and rebuilding the VTDecompressionSession on every repeated SPS/PPS
+    // (x264 re-embeds them before every keyframe) instead of only when the
+    // format description actually changes.
+    private let videoDecoder = VideoDecoder(config: .init(realTime: true))
+    private lazy var annexBAdaptor = VideoDecoderAnnexBAdaptor(videoDecoder: videoDecoder, codec: .h264)
+    private var decodeTask: Task<Void, Never>?
     private let ciContext = CIContext()
     private let motionManager = CMMotionManager()
 
@@ -70,26 +81,25 @@ final class PVRSteamVRClient: ObservableObject {
         log = []
         logEvent("Announcing to \(pcHost)...")
 
-        decoder.onFrame = { [weak self] pixelBuffer in
-            // The PC captures the SteamVR compositor's Direct3D texture
-            // (top-left origin, row 0 = top) and feeds it to x264 as raw
-            // frames; CoreImage's CVPixelBuffer coordinate space is
-            // bottom-left origin. That mismatch alone shows up as a 180°
-            // rotation ("mirrored and upside down" looks the same as a
-            // rotation to an untrained eye). Correct for it here since we
-            // can't easily patch/recompile the closed legacy PC driver.
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.down)
-            guard let cg = self?.ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
-            DispatchQueue.main.async {
-                self?.frame = cg
-                self?.framesDecoded += 1
+        decodeTask?.cancel()
+        decodeTask = Task { [weak self] in
+            guard let self = self else { return }
+            for await sampleBuffer in self.videoDecoder.decodedSampleBuffers {
+                guard let pixelBuffer = sampleBuffer.imageBuffer else { continue }
+                // The PC captures the SteamVR compositor's Direct3D texture
+                // (top-left origin, row 0 = top) and feeds it to x264 as raw
+                // frames; CoreImage's CVPixelBuffer coordinate space is
+                // bottom-left origin. That mismatch alone shows up as a 180°
+                // rotation ("mirrored and upside down" looks the same as a
+                // rotation to an untrained eye). Correct for it here since we
+                // can't easily patch/recompile the closed legacy PC driver.
+                let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.down)
+                guard let cg = self.ciContext.createCGImage(ciImage, from: ciImage.extent) else { continue }
+                await MainActor.run {
+                    self.frame = cg
+                    self.framesDecoded += 1
+                }
             }
-        }
-        decoder.onDecodeError = { [weak self] status in
-            DispatchQueue.main.async { self?.lastDecodeError = "VTDecompressionSessionDecodeFrame failed: \(status)" }
-        }
-        decoder.onSessionReady = { [weak self] in
-            self?.logEvent("Decoder session created from SPS/PPS")
         }
 
         frameParser.onFrame = { [weak self] msg, payload in
@@ -119,6 +129,9 @@ final class PVRSteamVRClient: ObservableObject {
 
     func stop() {
         active = false
+        decodeTask?.cancel()
+        decodeTask = nil
+        videoDecoder.invalidate()
         announceTimer?.invalidate()
         announceTimer = nil
         pairingListener?.cancel()
@@ -193,7 +206,7 @@ final class PVRSteamVRClient: ObservableObject {
             connectVideo()
             connectPose()
         case .headerNALs:
-            decoder.push(payload)   // contains SPS+PPS Annex-B NALs
+            annexBAdaptor.decode(payload)   // contains SPS+PPS Annex-B NALs
             logEvent("Got SPS/PPS (\(payload.count) bytes)")
         case .disconnect:
             logEvent("PC disconnected")
@@ -277,7 +290,7 @@ final class PVRSteamVRClient: ObservableObject {
 
     private func receiveVideoPayload(_ conn: NWConnection, remaining: Int, accumulated: Data = Data()) {
         guard remaining > 0 else {
-            decoder.push(accumulated)
+            annexBAdaptor.decode(accumulated)
             receiveVideoHeader(conn)
             return
         }
@@ -289,7 +302,7 @@ final class PVRSteamVRClient: ObservableObject {
             if left > 0 && error == nil && !isComplete {
                 self.receiveVideoPayload(conn, remaining: left, accumulated: acc)
             } else {
-                self.decoder.push(acc)
+                self.annexBAdaptor.decode(acc)
                 self.receiveVideoHeader(conn)
             }
         }
