@@ -14,11 +14,16 @@ platform :ios do
       project: "PhoneVR.xcodeproj",
       scheme: "PhoneVR",
       skip_package_ipa: true,
-      skip_codesigning: true,
       export_method: "development",
       output_directory: "build",
       archive_path: "build/PhoneVR.xcarchive",
-      xcargs: "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\""
+      # Ad-hoc sign (CODE_SIGN_IDENTITY=-) rather than fully disabling
+      # codesigning: a binary with no LC_CODE_SIGNATURE at all trips up
+      # resigning tools like Sideloadly ("Invalid file"). Ad-hoc gives it a
+      # placeholder signature Sideloadly can cleanly strip and replace.
+      xcargs: "CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- " \
+              "PROVISIONING_PROFILE_SPECIFIER= DEVELOPMENT_TEAM= " \
+              "CODE_SIGN_STYLE=Manual"
     )
   end
 end
