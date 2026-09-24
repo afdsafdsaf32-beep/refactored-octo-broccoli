@@ -17,6 +17,10 @@ final class H264Decoder {
     /// silently ignored, which made a broken decode path (see the use-after-free this replaced)
     /// indistinguishable from "no data arriving at all" without a debugger attached.
     var onDecodeError: ((OSStatus) -> Void)?
+    /// Fires once the VTDecompressionSession is actually created from SPS/PPS - if this never
+    /// fires, no amount of incoming video data will ever decode, which narrows down "0 frames
+    /// decoded" to a parameter-set problem rather than a networking one.
+    var onSessionReady: (() -> Void)?
 
     /// Feed raw bytes as they arrive from the socket; call repeatedly.
     func push(_ data: Data) {
@@ -107,6 +111,9 @@ final class H264Decoder {
             outputCallback: &callback,
             decompressionSessionOut: &newSession)
         session = newSession
+        if newSession != nil {
+            onSessionReady?()
+        }
     }
 
     private func decode(nal: [UInt8]) {

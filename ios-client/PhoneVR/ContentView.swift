@@ -100,9 +100,11 @@ struct ContentView: View {
             // the only way to see what stage things are stuck at.
             if mode == .steamVR && !showSettings {
                 VStack {
-                    VStack(spacing: 2) {
-                        Text(pvr.statusText)
-                        Text("frames decoded: \(pvr.framesDecoded)")
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(pvr.log.enumerated()), id: \.offset) { _, line in
+                            Text(line)
+                        }
+                        Text("frames decoded: \(pvr.framesDecoded)").bold()
                         if let err = pvr.lastDecodeError {
                             Text(err).foregroundColor(.red)
                         }
@@ -112,6 +114,8 @@ struct ContentView: View {
                     .background(Color.black.opacity(0.6))
                     .cornerRadius(6)
                     .padding(.top, 8)
+                    .padding(.leading, 8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Spacer()
                 }
             }

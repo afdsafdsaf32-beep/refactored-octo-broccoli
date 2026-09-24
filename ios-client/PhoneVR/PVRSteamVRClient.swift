@@ -20,6 +20,19 @@ final class PVRSteamVRClient: ObservableObject {
     @Published var frame: CGImage?
     @Published var framesDecoded = 0
     @Published var lastDecodeError: String?
+    /// Rolling log of milestones, newest last - unlike statusText (which
+    /// only ever shows the latest message) this lets you see the whole
+    /// handshake sequence at once, so a step that happened-then-got-
+    /// overwritten isn't invisible.
+    @Published var log: [String] = []
+
+    private func logEvent(_ message: String) {
+        DispatchQueue.main.async {
+            self.statusText = message
+            self.log.append(message)
+            if self.log.count > 8 { self.log.removeFirst(self.log.count - 8) }
+        }
+    }
 
     private let decoder = H264Decoder()
     private let ciContext = CIContext()
@@ -48,7 +61,8 @@ final class PVRSteamVRClient: ObservableObject {
         paired = false
         framesDecoded = 0
         lastDecodeError = nil
-        statusText = "Announcing to \(pcHost)..."
+        log = []
+        logEvent("Announcing to \(pcHost)...")
 
         decoder.onFrame = { [weak self] pixelBuffer in
             // The PC captures the SteamVR compositor's Direct3D texture
@@ -67,6 +81,9 @@ final class PVRSteamVRClient: ObservableObject {
         }
         decoder.onDecodeError = { [weak self] status in
             DispatchQueue.main.async { self?.lastDecodeError = "VTDecompressionSessionDecodeFrame failed: \(status)" }
+        }
+        decoder.onSessionReady = { [weak self] in
+            self?.logEvent("Decoder session created from SPS/PPS")
         }
 
         frameParser.onFrame = { [weak self] msg, payload in
@@ -128,7 +145,7 @@ final class PVRSteamVRClient: ObservableObject {
         controlConnection = conn
         conn.stateUpdateHandler = { [weak self] state in
             if case .ready = state {
-                DispatchQueue.main.async { self?.statusText = "Control channel connected" }
+                self?.logEvent("Control channel connected")
             }
         }
         conn.start(queue: queue)
@@ -164,15 +181,15 @@ final class PVRSteamVRClient: ObservableObject {
             paired = true
             announceTimer?.invalidate()
             announceTimer = nil
-            DispatchQueue.main.async { self.statusText = "Paired - sending display config" }
+            logEvent("Paired - sending display config")
             sendAdditionalData()
             connectVideo()
             connectPose()
         case .headerNALs:
             decoder.push(payload)   // contains SPS+PPS Annex-B NALs
-            DispatchQueue.main.async { self.statusText = "Got SPS/PPS (\(payload.count) bytes), connecting video..." }
+            logEvent("Got SPS/PPS (\(payload.count) bytes)")
         case .disconnect:
-            DispatchQueue.main.async { self.statusText = "PC disconnected" }
+            logEvent("PC disconnected")
             stop()
         default:
             break
@@ -198,9 +215,9 @@ final class PVRSteamVRClient: ObservableObject {
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                DispatchQueue.main.async { self?.statusText = "Video connected, waiting for frames..." }
+                self?.logEvent("Video connected, waiting for frames...")
             case .failed(let error):
-                DispatchQueue.main.async { self?.statusText = "Video connection failed: \(error)" }
+                self?.logEvent("Video connection failed: \(error)")
             default: break
             }
         }
