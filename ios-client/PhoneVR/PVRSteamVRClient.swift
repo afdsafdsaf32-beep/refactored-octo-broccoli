@@ -29,6 +29,8 @@ final class PVRSteamVRClient: ObservableObject {
     private var videoConnection: NWConnection?
     private var poseConnection: NWConnection?
     private let frameParser = PVRFrameParser()
+    private var announceTimer: Timer?
+    private var paired = false
 
     private let queue = DispatchQueue(label: "phonevr.pvr")
 
@@ -39,6 +41,7 @@ final class PVRSteamVRClient: ObservableObject {
 
     func start(pcHost: String) {
         self.pcHost = pcHost
+        paired = false
         statusText = "Announcing to \(pcHost)..."
 
         decoder.onFrame = { [weak self] pixelBuffer in
@@ -52,11 +55,25 @@ final class PVRSteamVRClient: ObservableObject {
         }
 
         startPairingListener()
-        sendPairingAnnounce()
         startMotion()
+
+        // The PC driver's pairing listener only exists once SteamVR has
+        // loaded it, which may well be after you've pressed Connect here
+        // (README even recommends opening this app first). A one-shot UDP
+        // announce would just vanish into that gap, so keep resending until
+        // the control channel actually comes up.
+        sendPairingAnnounce()
+        let timer = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self, !self.paired else { return }
+            self.sendPairingAnnounce()
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        announceTimer = timer
     }
 
     func stop() {
+        announceTimer?.invalidate()
+        announceTimer = nil
         pairingListener?.cancel()
         controlConnection?.cancel()
         videoConnection?.cancel()
@@ -117,6 +134,9 @@ final class PVRSteamVRClient: ObservableObject {
     private func handleControlFrame(_ msg: PVRMsg, _ payload: Data) {
         switch msg {
         case .pairAccept:
+            paired = true
+            announceTimer?.invalidate()
+            announceTimer = nil
             DispatchQueue.main.async { self.statusText = "Paired - sending display config" }
             sendAdditionalData()
             connectVideo()
