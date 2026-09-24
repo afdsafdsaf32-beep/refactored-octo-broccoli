@@ -41,16 +41,28 @@ final class StreamViewModel: ObservableObject {
     }
 }
 
+enum ConnectionMode: String, CaseIterable, Identifiable {
+    case mouseLook = "Mouse-look (any game)"
+    case steamVR = "SteamVR (PhoneVR driver)"
+    var id: String { rawValue }
+}
+
 struct ContentView: View {
     @StateObject private var vm = StreamViewModel()
+    @StateObject private var pvr = PVRSteamVRClient()
     @State private var host = "192.168.1.100"
     @State private var showSettings = true
+    @State private var mode: ConnectionMode = .mouseLook
+
+    private var activeImage: CGImage? {
+        mode == .steamVR ? pvr.frame : vm.frame
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            if let image = vm.frame {
+            if let image = activeImage {
                 GeometryReader { geo in
                     HStack(spacing: 0) {
                         eyeView(image: image, width: geo.size.width / 2, height: geo.size.height)
@@ -64,19 +76,42 @@ struct ContentView: View {
             if showSettings {
                 VStack(spacing: 16) {
                     Text("PhoneVR").font(.title).foregroundColor(.white)
+
+                    Picker("Mode", selection: $mode) {
+                        ForEach(ConnectionMode.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 24)
+
                     TextField("PC IP address (or 127.0.0.1 for USB)", text: $host)
                         .textFieldStyle(.roundedBorder)
                         .padding(.horizontal, 40)
                         .keyboardType(.numbersAndPunctuation)
-                    Button(vm.connected ? "Connected" : "Connect") {
-                        vm.connect(host: host)
+
+                    Button(statusLabel) {
+                        switch mode {
+                        case .mouseLook: vm.connect(host: host)
+                        case .steamVR: pvr.start(pcHost: host)
+                        }
                         showSettings = false
                     }
                     .buttonStyle(.borderedProminent)
-                    Text("Tip: for USB, run iproxy on the PC and use 127.0.0.1 here.")
-                        .font(.footnote).foregroundColor(.gray)
-                        .padding(.horizontal, 40)
-                        .multilineTextAlignment(.center)
+
+                    if mode == .steamVR {
+                        Text(pvr.statusText)
+                            .font(.footnote).foregroundColor(.gray)
+                            .padding(.horizontal, 40)
+                            .multilineTextAlignment(.center)
+                        Text("Requires the PhoneVR OpenVR driver installed and SteamVR running on the PC.")
+                            .font(.caption2).foregroundColor(.gray)
+                            .padding(.horizontal, 40)
+                            .multilineTextAlignment(.center)
+                    } else {
+                        Text("Tip: for USB, run iproxy on the PC and use 127.0.0.1 here.")
+                            .font(.footnote).foregroundColor(.gray)
+                            .padding(.horizontal, 40)
+                            .multilineTextAlignment(.center)
+                    }
                 }
                 .padding()
                 .background(.ultraThinMaterial)
@@ -85,6 +120,10 @@ struct ContentView: View {
         }
         .statusBar(hidden: true)
         .persistentSystemOverlays(.hidden)
+    }
+
+    private var statusLabel: String {
+        mode == .steamVR ? (pvr.frame == nil ? "Connect" : "Connected") : (vm.connected ? "Connected" : "Connect")
     }
 
     private func eyeView(image: CGImage, width: CGFloat, height: CGFloat) -> some View {
