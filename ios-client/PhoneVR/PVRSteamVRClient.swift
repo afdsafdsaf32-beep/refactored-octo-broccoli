@@ -1,6 +1,8 @@
 import Foundation
 import Network
 import CoreMotion
+import CoreImage
+import CoreGraphics
 
 /// Drives the full PhoneVR/SteamVR handshake (see PVRProtocol.swift) so this
 /// app can act as the "HMD" side of the open-source PhoneVR OpenVR driver:
