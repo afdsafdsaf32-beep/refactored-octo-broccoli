@@ -1,4 +1,4 @@
-name: Build iOS .ipa
+name: Build unsigned iOS .ipa
 
 on:
   workflow_dispatch:
@@ -36,23 +36,21 @@ jobs:
       - name: Install fastlane
         run: gem install fastlane -N
 
-      - name: Restore Apple session (avoids interactive 2FA)
-        env:
-          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
-        run: echo "FASTLANE_SESSION is set, used automatically by fastlane"
-
-      - name: Build & sign .ipa
-        env:
-          FASTLANE_USER: ${{ secrets.APPLE_ID }}
-          FASTLANE_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          FASTLANE_SESSION: ${{ secrets.FASTLANE_SESSION }}
-          FASTLANE_TEAM_ID: ${{ secrets.FASTLANE_TEAM_ID }}
-          FASTLANE_DISABLE_COLORS: "1"
+      - name: Build unsigned archive
         run: fastlane build
 
-      - name: Upload .ipa artifact
+      - name: Package unsigned .ipa from the archive
+        run: |
+          APP_PATH="build/PhoneVR.xcarchive/Products/Applications/PhoneVR.app"
+          mkdir -p ipa_root/Payload
+          cp -R "$APP_PATH" ipa_root/Payload/
+          cd ipa_root
+          zip -r ../build/PhoneVR-unsigned.ipa Payload
+          cd ..
+
+      - name: Upload unsigned .ipa artifact
         uses: actions/upload-artifact@v4
         with:
-          name: PhoneVR-ipa
-          path: ios-client/build/PhoneVR.ipa
-          retention-days: 7
+          name: PhoneVR-unsigned-ipa
+          path: ios-client/build/PhoneVR-unsigned.ipa
+          retention-days: 14
