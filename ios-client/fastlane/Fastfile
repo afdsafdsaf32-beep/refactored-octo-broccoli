@@ -8,12 +8,15 @@ platform :ios do
     setup_ci if ENV["CI"]
 
     team_id = ENV["FASTLANE_TEAM_ID"]   # optional; auto-detected if you only have one team
+    apple_id = ENV["FASTLANE_USER"] || ENV["APPLE_ID"]
+    UI.user_error!("APPLE_ID secret is not set") if apple_id.nil? || apple_id.empty?
 
     # `cert`/`sigh` talk to the Apple Developer Portal API directly (via the
     # spaceship session), unlike `match`, so they need no separate storage
     # repo - just a signed-in Apple ID, which works for a free personal team.
-    cert(team_id: team_id, output_path: "certs")
+    cert(username: apple_id, team_id: team_id, output_path: "certs")
     sigh(
+      username: apple_id,
       app_identifier: "com.phonevr.app",
       team_id: team_id,
       output_path: "profiles",
