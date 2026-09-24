@@ -49,9 +49,7 @@ jobs:
           cp -R "$APP_PATH" ipa_root/Payload/
           find ipa_root -name ".DS_Store" -delete
           find ipa_root -name "._*" -delete
-          cd ipa_root
-          zip -r -X -y ../build/PhoneVR-unsigned.ipa Payload
-          cd ..
+          ditto -c -k --keepParent ipa_root/Payload build/PhoneVR-unsigned.ipa
           unzip -l build/PhoneVR-unsigned.ipa | head -20
 
       - name: Upload unsigned .ipa artifact

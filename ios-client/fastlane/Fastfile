@@ -17,13 +17,13 @@ platform :ios do
       export_method: "development",
       output_directory: "build",
       archive_path: "build/PhoneVR.xcarchive",
-      # Ad-hoc sign (CODE_SIGN_IDENTITY=-) rather than fully disabling
-      # codesigning: a binary with no LC_CODE_SIGNATURE at all trips up
-      # resigning tools like Sideloadly ("Invalid file"). Ad-hoc gives it a
-      # placeholder signature Sideloadly can cleanly strip and replace.
-      xcargs: "CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=- " \
-              "PROVISIONING_PROFILE_SPECIFIER= DEVELOPMENT_TEAM= " \
-              "CODE_SIGN_STYLE=Manual"
+      # Ad-hoc signing (CODE_SIGN_IDENTITY=-) is flatly rejected by modern
+      # iOS SDKs for device builds ("Ad Hoc code signing is not allowed"),
+      # so go back to no signing at all - Sideloadly is designed to accept
+      # exactly this (it resigns from scratch). The packaging step now uses
+      # `ditto` instead of `zip`, which is the actual cause of the earlier
+      # "Invalid file" error, not the missing signature.
+      xcargs: "CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=\"\""
     )
   end
 end
