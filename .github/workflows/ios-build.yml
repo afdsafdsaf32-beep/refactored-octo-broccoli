@@ -40,13 +40,19 @@ jobs:
         run: fastlane build
 
       - name: Package unsigned .ipa from the archive
+        env:
+          COPYFILE_DISABLE: "1"   # stop macOS cp from writing AppleDouble (._*) resource-fork files
         run: |
           APP_PATH="build/PhoneVR.xcarchive/Products/Applications/PhoneVR.app"
+          rm -rf ipa_root
           mkdir -p ipa_root/Payload
           cp -R "$APP_PATH" ipa_root/Payload/
+          find ipa_root -name ".DS_Store" -delete
+          find ipa_root -name "._*" -delete
           cd ipa_root
-          zip -r ../build/PhoneVR-unsigned.ipa Payload
+          zip -r -X -y ../build/PhoneVR-unsigned.ipa Payload
           cd ..
+          unzip -l build/PhoneVR-unsigned.ipa | head -20
 
       - name: Upload unsigned .ipa artifact
         uses: actions/upload-artifact@v4
