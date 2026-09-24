@@ -1,9 +1,10 @@
 import Foundation
 import Network
 
-/// Plain TCP connection to the PC server. Works over Wi-Fi (host = PC's LAN IP)
-/// or over USB (host = "127.0.0.1", port forwarded through iproxy - see
-/// docs/usb-tunnel.md). The app doesn't need to know which one is active.
+/// Plain TCP connection to the PC server. Works over Wi-Fi (host = PC's LAN
+/// IP) or over the USB Ethernet link (host = PC's IP on the "Apple Mobile
+/// Device Ethernet" adapter - see docs/usb-connection.md). The app doesn't
+/// need to know which one is active, it's just a different IP either way.
 final class TCPClient {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "phonevr.tcp")

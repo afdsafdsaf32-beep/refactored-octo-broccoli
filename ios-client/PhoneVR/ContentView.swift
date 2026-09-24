@@ -11,9 +11,9 @@ final class StreamViewModel: ObservableObject {
     private var motionSender: MotionSender?
     private let ciContext = CIContext()
 
-    /// host: PC's LAN IP for Wi-Fi, or "127.0.0.1" if tunneled over USB via
-    /// iproxy (see docs/usb-tunnel.md). videoPort/controlPort must match
-    /// server.py's VIDEO_PORT / CONTROL_PORT (or the local ports iproxy forwards to).
+    /// host: the PC's IP, either on the Wi-Fi LAN or on the USB Ethernet
+    /// link (see docs/usb-connection.md) - same code path either way.
+    /// videoPort/controlPort must match server.py's VIDEO_PORT / CONTROL_PORT.
     func connect(host: String, videoPort: UInt16 = 9001, controlPort: UInt16 = 9002) {
         decoder.onFrame = { [weak self] pixelBuffer in
             let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -47,12 +47,34 @@ enum ConnectionMode: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
+/// Both transports use the exact same TCP/UDP code below - "USB" only
+/// changes which IP you type in, since the phone dials out to the PC in
+/// every mode. Wi-Fi: the PC's normal LAN IP. USB: enable Internet Sharing
+/// (Windows: "Internet Connection Sharing" onto the "Apple Mobile Device
+/// Ethernet" adapter that appears when the iPhone is plugged in) so the
+/// phone gets a real IP over the cable and can reach the PC directly - see
+/// docs/usb-connection.md. (A raw usbmuxd/iproxy tunnel does NOT work here:
+/// it only forwards PC-initiated connections, and this app always dials out.)
+enum Transport: String, CaseIterable, Identifiable {
+    case wifi = "Wi-Fi"
+    case usb = "USB"
+    var id: String { rawValue }
+
+    var hint: String {
+        switch self {
+        case .wifi: return "Enter the PC's normal LAN IP (same Wi-Fi network)."
+        case .usb: return "Enable Internet Sharing to the \"Apple Mobile Device Ethernet\" adapter on the PC, then enter the PC's IP on that adapter (see docs/usb-connection.md)."
+        }
+    }
+}
+
 struct ContentView: View {
     @StateObject private var vm = StreamViewModel()
     @StateObject private var pvr = PVRSteamVRClient()
     @State private var host = "192.168.1.100"
     @State private var showSettings = true
     @State private var mode: ConnectionMode = .mouseLook
+    @State private var transport: Transport = .wifi
 
     private var activeImage: CGImage? {
         mode == .steamVR ? pvr.frame : vm.frame
@@ -83,10 +105,21 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal, 24)
 
-                    TextField("PC IP address (or 127.0.0.1 for USB)", text: $host)
+                    Picker("Transport", selection: $transport) {
+                        ForEach(Transport.allCases) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal, 24)
+
+                    TextField("PC IP address", text: $host)
                         .textFieldStyle(.roundedBorder)
                         .padding(.horizontal, 40)
                         .keyboardType(.numbersAndPunctuation)
+
+                    Text(transport.hint)
+                        .font(.caption2).foregroundColor(.gray)
+                        .padding(.horizontal, 40)
+                        .multilineTextAlignment(.center)
 
                     Button(statusLabel) {
                         switch mode {
@@ -104,11 +137,6 @@ struct ContentView: View {
                             .multilineTextAlignment(.center)
                         Text("Requires the PhoneVR OpenVR driver installed and SteamVR running on the PC.")
                             .font(.caption2).foregroundColor(.gray)
-                            .padding(.horizontal, 40)
-                            .multilineTextAlignment(.center)
-                    } else {
-                        Text("Tip: for USB, run iproxy on the PC and use 127.0.0.1 here.")
-                            .font(.footnote).foregroundColor(.gray)
                             .padding(.horizontal, 40)
                             .multilineTextAlignment(.center)
                     }

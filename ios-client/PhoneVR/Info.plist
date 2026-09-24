@@ -6,11 +6,15 @@
     <string>PhoneVR connects to your PC over the local network to receive the video stream and send head-tracking data.</string>
     <key>UIRequiresFullScreen</key>
     <true/>
+    <!-- Single orientation only (not Left+Right) so the screen never
+         rotates while the phone is in a VR/Cardboard holder - head tilt
+         would otherwise flip the split-eye view mid-session. -->
     <key>UISupportedInterfaceOrientations</key>
     <array>
-        <string>UIInterfaceOrientationLandscapeLeft</string>
         <string>UIInterfaceOrientationLandscapeRight</string>
     </array>
+    <key>UIInterfaceOrientation</key>
+    <string>UIInterfaceOrientationLandscapeRight</string>
     <key>UIViewControllerBasedStatusBarAppearance</key>
     <false/>
 </dict>
