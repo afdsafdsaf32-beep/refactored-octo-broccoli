@@ -39,6 +39,15 @@ Repo → Settings → Secrets and variables → Actions → New repository secre
 | `APPLE_ID` | твой Apple ID (email) |
 | `APPLE_APP_SPECIFIC_PASSWORD` | пароль из шага 1 |
 | `FASTLANE_SESSION` | строка из шага 2 |
+| `FASTLANE_TEAM_ID` | обычно можно **оставить пустым** — см. ниже |
+
+`FASTLANE_TEAM_ID` нужен только если у твоего Apple ID несколько команд
+разработки (например, ты когда-то был приглашён в чужую Organization). Для
+обычного бесплатного личного аккаунта команда всего одна ("Имя (Personal
+Team)"), и `cert`/`sigh` определят её сами. Если сборка всё же упадёт с
+ошибкой вида "multiple teams found" — зайди на
+https://developer.apple.com/account (после логина там, при нескольких
+командах, будет видно ID нужной) и добавь его в этот секрет.
 
 Сессия из `spaceauth` тоже не вечная (обычно около месяца) — когда сборка
 начнёт падать с ошибкой авторизации, просто повтори шаг 2 и обнови секрет.

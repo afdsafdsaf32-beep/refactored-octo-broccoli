@@ -3,17 +3,30 @@ default_platform(:ios)
 platform :ios do
   desc "Build and sign PhoneVR with a free (personal-team) Apple ID and export an .ipa"
   lane :build do
-    # Signs in using the Apple ID + app-specific password stored in
-    # FASTLANE_USER / FASTLANE_PASSWORD (or a pre-captured FASTLANE_SESSION,
-    # which avoids 2FA prompts in CI - see docs/ios-ci.md).
+    # Signs in using FASTLANE_SESSION (captured once locally via
+    # `fastlane spaceauth`, see docs/ios-ci.md) - avoids interactive 2FA.
     setup_ci if ENV["CI"]
 
-    sync_code_signing(
-      type: "development",
-      readonly: false,
-      username: ENV["FASTLANE_USER"],
-      app_identifier: "com.phonevr.app"
-    ) rescue UI.message("sync_code_signing skipped, falling back to xcodebuild -allowProvisioningUpdates")
+    team_id = ENV["FASTLANE_TEAM_ID"]   # optional; auto-detected if you only have one team
+
+    # `cert`/`sigh` talk to the Apple Developer Portal API directly (via the
+    # spaceship session), unlike `match`, so they need no separate storage
+    # repo - just a signed-in Apple ID, which works for a free personal team.
+    cert(team_id: team_id, output_path: "certs")
+    sigh(
+      app_identifier: "com.phonevr.app",
+      team_id: team_id,
+      output_path: "profiles",
+      force: true
+    )
+
+    update_code_signing_settings(
+      use_automatic_signing: false,
+      path: "PhoneVR.xcodeproj",
+      code_sign_identity: "Apple Development",
+      profile_name: lane_context[SharedValues::SIGH_PROFILE_NAME],
+      team_id: team_id
+    )
 
     gym(
       project: "PhoneVR.xcodeproj",
@@ -21,7 +34,7 @@ platform :ios do
       export_method: "development",
       output_directory: "build",
       output_name: "PhoneVR.ipa",
-      xcargs: "-allowProvisioningUpdates"
+      export_team_id: team_id
     )
   end
 end
