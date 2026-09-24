@@ -45,7 +45,14 @@ final class PVRSteamVRClient: ObservableObject {
         statusText = "Announcing to \(pcHost)..."
 
         decoder.onFrame = { [weak self] pixelBuffer in
-            let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+            // The PC captures the SteamVR compositor's Direct3D texture
+            // (top-left origin, row 0 = top) and feeds it to x264 as raw
+            // frames; CoreImage's CVPixelBuffer coordinate space is
+            // bottom-left origin. That mismatch alone shows up as a 180°
+            // rotation ("mirrored and upside down" looks the same as a
+            // rotation to an untrained eye). Correct for it here since we
+            // can't easily patch/recompile the closed legacy PC driver.
+            let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.down)
             guard let cg = self?.ciContext.createCGImage(ciImage, from: ciImage.extent) else { return }
             DispatchQueue.main.async { self?.frame = cg }
         }
